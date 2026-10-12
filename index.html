@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>FSE Continuous Carpool Scanner</title>
+
+  <style>
+    :root {
+      color-scheme: light;
+      --green:#19583e;
+      --dark:#163a2b;
+      --muted:#5f7167;
+      --line:#d7e2da;
+      --paper:#ffffff;
+      --surface:#eef4ef;
+      --success:#176b45;
+      --warning:#91620b;
+      --error:#962f22;
+    }
+
+    * { box-sizing:border-box; }
+
+    body {
+      margin:0;
+      background:var(--surface);
+      color:var(--dark);
+      font:16px/1.4 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+
+    header {
+      background:var(--green);
+      color:#fff;
+      padding:18px 16px;
+      text-align:center;
+    }
+
+    header h1 {
+      margin:0;
+      font-size:23px;
+    }
+
+    header p {
+      margin:4px 0 0;
+      color:#e8f3eb;
+      font-size:14px;
+    }
+
+    main {
+      width:min(760px,100%);
+      margin:auto;
+      padding:14px;
+    }
+
+    .panel {
+      background:var(--paper);
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:14px;
+      margin-bottom:12px;
+    }
+
+    .status-row {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .pill {
+      display:inline-flex;
+      align-items:center;
+      min-height:34px;
+      padding:6px 11px;
+      border-radius:999px;
+      background:#eef2ef;
+      font-weight:700;
+      font-size:14px;
+    }
+
+    .pill.active { background:#e1f3e8; color:var(--success); }
+    .pill.error { background:#f8e8e5; color:var(--error); }
+
+    #reader {
+      width:100%;
+      min-height:310px;
+      overflow:hidden;
+      border-radius:14px;
+      background:#101b15;
+      margin-top:12px;
+    }
+
+    #reader video {
+      object-fit:cover !important;
+    }
+
+    .buttons {
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+      margin-top:12px;
+    }
+
+    button,
+    .photo-label {
+      min-height:52px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#fff;
+      color:var(--dark);
+      padding:11px 14px;
+      font:inherit;
+      font-weight:750;
+      cursor:pointer;
+      text-align:center;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    button.primary,
+    .photo-label.primary {
+      background:var(--green);
+      border-color:var(--green);
+      color:#fff;
+    }
+
+    button:disabled,
+    .photo-label.disabled {
+      opacity:.5;
+      cursor:default;
+    }
+
+    .photo-label input {
+      position:absolute;
+      width:1px;
+      height:1px;
+      opacity:0;
+      pointer-events:none;
+    }
+
+    .feedback {
+      text-align:center;
+      min-height:150px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:5px;
+    }
+
+    .feedback.success { border:2px solid #9ccdad; }
+    .feedback.warning { border:2px solid #dfc36d; }
+    .feedback.error { border:2px solid #dfa69d; }
+
+    .family {
+      font-size:34px;
+      line-height:1.05;
+      font-weight:900;
+      text-transform:uppercase;
+      overflow-wrap:anywhere;
+    }
+
+    .students {
+      color:var(--muted);
+      font-weight:600;
+    }
+
+    .assignment {
+      margin-top:4px;
+      font-size:24px;
+      font-weight:900;
+      color:var(--green);
+    }
+
+    .note {
+      color:var(--muted);
+      font-size:14px;
+      margin:8px 0 0;
+    }
+
+    .hidden { display:none !important; }
+
+    @media(max-width:520px) {
+      .buttons { grid-template-columns:1fr; }
+      #reader { min-height:270px; }
+      .family { font-size:29px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>FSE Carpool Scanner</h1>
+    <p>Continuous QR scanning + photo fallback</p>
+  </header>
+
+  <main>
+
+    <section class="panel">
+      <div class="status-row">
+        <strong>Scanner</strong>
+        <span id="status" class="pill">Connecting to FSE Queue…</span>
+      </div>
+
+      <div id="reader"></div>
+
+      <div class="buttons">
+        <button id="start" type="button" class="primary">Start Continuous Scanner</button>
+        <button id="pause" type="button" disabled>Pause Scanner</button>
+
+        <label id="photoLabel" class="photo-label">
+          Add Photo Instead
+          <input id="photo" type="file" accept="image/*" capture="environment">
+        </label>
+
+        <button id="close" type="button">Close Scanner</button>
+      </div>
+
+      <p class="note">
+        Scan cars in their physical order. If a car has no QR tag, tap
+        <strong>Add Photo Instead</strong>; the photo is inserted into that same queue position,
+        then QR scanning resumes.
+      </p>
+    </section>
+
+    <section id="feedback" class="panel feedback">
+      <div id="family" class="family">Ready</div>
+      <div id="students" class="students">Open this page from the FSE Carpool Queue.</div>
+      <div id="assignment" class="assignment"></div>
+    </section>
+
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+
+  <script>
+  (() => {
+    'use strict';
+
+    const $ = id => document.getElementById(id);
+
+    const params = new URLSearchParams(location.search);
+    const bridge = params.get('bridge') || '';
+    const openerOrigin = params.get('openerOrigin') || '';
+
+    let scanner = null;
+    let running = false;
+    let starting = false;
+    let processing = false;
+    let connected = false;
+    let currentRequest = '';
+    let currentKind = '';
+    let responseTimer = null;
+    let paused = false;
+    let currentQrValue = '';
+    let lastText = '';
+    let lastAt = 0;
+
+    function id() {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, b => b.toString(16).padStart(2,'0')).join('');
+    }
+
+    function setStatus(text, kind='') {
+      $('status').textContent = text;
+      $('status').className = 'pill' + (kind ? ' ' + kind : '');
+    }
+
+    function feedback(kind, family, students, assignment) {
+      $('feedback').className = 'panel feedback' + (kind ? ' ' + kind : '');
+      $('family').textContent = family || '';
+      $('students').textContent = students || '';
+      $('assignment').textContent = assignment || '';
+    }
+
+    function setControls() {
+      $('start').disabled = starting || running || processing || !connected;
+      $('pause').disabled = starting || processing || !running;
+      $('pause').textContent = paused ? 'Resume Scanner' : 'Pause Scanner';
+
+      const photoDisabled = starting || processing || !connected;
+      $('photo').disabled = photoDisabled;
+      $('photoLabel').classList.toggle('disabled', photoDisabled);
+    }
+
+    function validBridge() {
+      if (!window.opener || !bridge || !openerOrigin) return false;
+      try {
+        return new URL(openerOrigin).origin === openerOrigin;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function send(payload) {
+      if (!validBridge()) return false;
+      try {
+        window.opener.postMessage(
+          Object.assign({bridge}, payload),
+          openerOrigin
+        );
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async function startScanner() {
+      if (running || starting || processing || !connected) return;
+
+      if (typeof Html5Qrcode === 'undefined') {
+        feedback('error','Scanner unavailable','The QR scanning library could not load.','');
+        setStatus('Scanner library unavailable','error');
+        return;
+      }
+
+      starting = true;
+      setControls();
+      setStatus('Starting camera…');
+
+      try {
+        scanner = new Html5Qrcode('reader');
+
+        await scanner.start(
+          { facingMode: 'environment' },
+          {
+            fps: 12,
+            qrbox: (w,h) => {
+              const side = Math.floor(Math.min(w,h) * 0.72);
+              return { width:side, height:side };
+            },
+            aspectRatio: 1.333333
+          },
+          onScan,
+          () => {}
+        );
+
+        running = true;
+        paused = false;
+        setStatus('Scanning continuously','active');
+        feedback('','Ready for next car','','');
+
+      } catch (error) {
+        scanner = null;
+        running = false;
+        const detail = error && error.message ? error.message : String(error || 'Camera could not start.');
+        setStatus('Camera unavailable','error');
+        feedback('error','Camera could not start',detail,'Check browser camera permission, then try again.');
+      } finally {
+        starting = false;
+        setControls();
+      }
+    }
+
+    async function pauseScanner(showStatus=true) {
+      if (scanner && running && !paused) {
+        try {
+          scanner.pause(true);
+          paused = true;
+        } catch (_) {}
+      }
+      if (showStatus) setStatus('Scanner paused');
+      setControls();
+    }
+
+    async function resumeScanner() {
+      if (!scanner || !running || processing) return;
+      try {
+        if (paused) {
+          scanner.resume();
+          paused = false;
+        }
+        setStatus('Scanning continuously','active');
+        setControls();
+      } catch (_) {
+        await stopScanner(false);
+        await startScanner();
+      }
+    }
+
+    async function stopScanner(update=true) {
+      if (scanner && running) {
+        try { await scanner.stop(); } catch (_) {}
+      }
+      if (scanner) {
+        try { scanner.clear(); } catch (_) {}
+      }
+      scanner = null;
+      running = false;
+      paused = false;
+      processing = false;
+      clearTimeout(responseTimer);
+      if (update) setStatus('Scanner stopped');
+      setControls();
+    }
+
+    async function onScan(decodedText) {
+      const value = String(decodedText || '').trim();
+      if (!value || processing || !running || !connected) return;
+
+      const now = Date.now();
+      if (value === lastText && now - lastAt < 1200) return;
+
+      processing = true;
+      currentKind = 'qr';
+      currentQrValue = value;
+      currentRequest = id();
+      setControls();
+      await pauseScanner(false);
+      setStatus('Adding scanned car…');
+      feedback('','Reading tag…','','');
+
+      const sent = send({
+        type:'FSE_QR_SCAN',
+        requestKey:currentRequest,
+        value
+      });
+
+      if (!sent) {
+        processing = false;
+        setControls();
+        setStatus('FSE Queue connection lost','error');
+        feedback('error','Not connected','Return to the FSE Queue and reopen the scanner.','');
+        return;
+      }
+
+      responseTimer = setTimeout(() => {
+        if (!processing || currentKind !== 'qr') return;
+        processing = false;
+        setControls();
+        setStatus('Queue response delayed','error');
+        feedback('error','No response from FSE Queue','Keep this same car in place and tap Resume Scanner to retry.','');
+      }, 20000);
+    }
+
+    async function compress(file) {
+      if (!file || file.size > 25000000) {
+        throw new Error('Choose a photo smaller than 25 MB.');
+      }
+
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        await new Promise((resolve,reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error('The photo could not be opened. Retake it.'));
+          img.src = url;
+        });
+
+        const factor = Math.min(1, 1400 / Math.max(img.naturalWidth,img.naturalHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * factor));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * factor));
+
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(img,0,0,canvas.width,canvas.height);
+
+        let quality = .82;
+        let data = canvas.toDataURL('image/jpeg',quality);
+        while (data.length > 700000 && quality > .4) {
+          quality -= .1;
+          data = canvas.toDataURL('image/jpeg',quality);
+        }
+
+        if (data.length > 700000) {
+          throw new Error('The photo is too large. Move closer to the tag and retake it.');
+        }
+
+        return data;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    async function capturePhoto(file) {
+      if (!file || processing || !connected) return;
+
+      processing = true;
+      currentKind = 'photo';
+      currentRequest = id();
+      setControls();
+      await pauseScanner(false);
+      setStatus('Preparing photo…');
+      feedback('','Preparing photo fallback…','','');
+
+      try {
+        const image = await compress(file);
+        const photoId = id();
+
+        setStatus('Saving photo car…');
+
+        if (!send({
+          type:'FSE_PHOTO_CAPTURE',
+          requestKey:currentRequest,
+          photoId,
+          image
+        })) {
+          throw new Error('The FSE Queue connection was lost.');
+        }
+
+        responseTimer = setTimeout(() => {
+          if (!processing || currentKind !== 'photo') return;
+          processing = false;
+          setControls();
+          setStatus('Queue response delayed','error');
+          feedback('error','Photo not confirmed','Do not move to the next car yet. Return to the FSE Queue and verify the photo saved.','');
+        }, 30000);
+
+      } catch (error) {
+        processing = false;
+        setControls();
+        setStatus('Photo not saved','error');
+        feedback('error','Photo not saved',error.message || String(error),'Retake this same car before moving on.');
+        await resumeScanner();
+      }
+    }
+
+    window.addEventListener('message', async event => {
+      if (event.origin !== openerOrigin || !event.data || event.data.bridge !== bridge) return;
+
+      const data = event.data;
+
+      if (data.type === 'FSE_SCANNER_CONNECTED') {
+        connected = true;
+        setStatus('Connected to FSE Queue','active');
+        feedback('','Ready','Tap Start Continuous Scanner.','');
+        setControls();
+        return;
+      }
+
+      if (data.type === 'FSE_SCAN_RESULT' && data.requestKey === currentRequest && currentKind === 'qr') {
+        clearTimeout(responseTimer);
+        processing = false;
+        currentKind = '';
+        if (data.ok) {
+          lastText = currentQrValue;
+          lastAt = Date.now();
+        }
+        currentQrValue = '';
+        setControls();
+
+        if (data.ok) {
+          const assignment = 'Car ' + data.sequence + (data.station ? ' → Station ' + data.station : '');
+          feedback(data.duplicate ? 'warning' : 'success', data.duplicate ? 'Already in line: ' + data.familyName : '✓ ' + data.familyName, data.students || '', assignment);
+          setStatus(data.duplicate ? 'Already in line' : 'Saved — ready for next car', data.duplicate ? '' : 'active');
+          if (navigator.vibrate) navigator.vibrate(data.duplicate ? [60,45,60] : 90);
+          setTimeout(resumeScanner, data.duplicate ? 900 : 550);
+        } else {
+          feedback('error','Scan not accepted',data.error || 'The QR tag could not be saved.','');
+          setStatus('Scan not accepted','error');
+          if (navigator.vibrate) navigator.vibrate([90,70,90]);
+          setTimeout(resumeScanner, 1200);
+        }
+        return;
+      }
+
+      if (data.type === 'FSE_PHOTO_RESULT' && data.requestKey === currentRequest && currentKind === 'photo') {
+        clearTimeout(responseTimer);
+        processing = false;
+        currentKind = '';
+        setControls();
+
+        if (data.ok) {
+          const assignment = 'Car ' + data.sequence + (data.station ? ' → Station ' + data.station : '');
+          feedback('success','✓ PHOTO SAVED','Photo fallback inserted in the same queue order.',assignment);
+          setStatus('Photo saved — returning to QR','active');
+          if (navigator.vibrate) navigator.vibrate(90);
+          setTimeout(resumeScanner,700);
+        } else {
+          feedback('error','Photo not saved',data.error || 'The photo could not be saved.','Do not scan the next car yet.');
+          setStatus('Photo not saved','error');
+          if (navigator.vibrate) navigator.vibrate([90,70,90]);
+          setTimeout(resumeScanner,1200);
+        }
+        return;
+      }
+
+      if (data.type === 'FSE_SCANNER_PAUSE') {
+        await pauseScanner();
+        return;
+      }
+
+      if (data.type === 'FSE_SCANNER_RESUME') {
+        await resumeScanner();
+        return;
+      }
+
+      if (data.type === 'FSE_SCANNER_CLOSE') {
+        await stopScanner(false);
+        send({type:'FSE_SCANNER_CLOSED'});
+        window.close();
+      }
+    });
+
+    $('start').addEventListener('click', startScanner);
+
+    $('pause').addEventListener('click', async () => {
+      if (!running || processing) return;
+      if (paused) {
+        await resumeScanner();
+      } else {
+        await pauseScanner();
+      }
+    });
+
+    $('photoLabel').addEventListener('click', () => {
+      if (!running || processing) return;
+      pauseScanner(false);
+      setStatus('Photo fallback ready');
+    });
+
+    $('photo').addEventListener('change', async event => {
+      const file = event.target.files[0];
+      event.target.value = '';
+      if (!file) {
+        await resumeScanner();
+        return;
+      }
+      await capturePhoto(file);
+    });
+
+    $('close').addEventListener('click', async () => {
+      await stopScanner(false);
+      send({type:'FSE_SCANNER_CLOSED'});
+      window.close();
+    });
+
+    window.addEventListener('beforeunload', () => {
+      send({type:'FSE_SCANNER_CLOSED'});
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && running && scanner && paused && !processing) {
+        setTimeout(resumeScanner,250);
+      }
+    });
+
+    if (!validBridge()) {
+      connected = false;
+      setStatus('Open from FSE Queue','error');
+      feedback('error','Scanner not connected','Open the FSE Carpool Queue first and tap Open Continuous QR Scanner.','');
+      setControls();
+      return;
+    }
+
+    send({type:'FSE_SCANNER_READY'});
+    setControls();
+  })();
+  </script>
+</body>
+</html>

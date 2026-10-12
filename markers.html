@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FSE AprilTag Test Markers</title>
+<style>
+  body{font-family:system-ui,sans-serif;margin:0;padding:20px;background:#f4f7f4;color:#163a2b}
+  h1{margin:0 0 8px}.note{margin:0 0 18px;color:#5b6d63}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
+  .tag{background:#fff;border:3px solid #19583e;border-radius:14px;padding:18px;text-align:center;break-inside:avoid}
+  .tag img{width:min(100%,320px);image-rendering:pixelated}
+  .id{font-size:34px;font-weight:900;margin-top:8px}
+  @media print{body{background:#fff}.tag{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+<h1>FSE AprilTag Test Markers</h1>
+<p class="note">Use ?ids=142,318,207,451 in the address to show specific marker IDs. These are Standard41h12 markers.</p>
+<div id="grid" class="grid"></div>
+<script>
+const params=new URLSearchParams(location.search);
+const ids=(params.get('ids')||'14,15,16,17').split(',').map(x=>Number(x.trim())).filter(x=>Number.isInteger(x)&&x>=0&&x<=2114);
+const grid=document.getElementById('grid');
+ids.forEach(id=>{
+  const card=document.createElement('div'); card.className='tag';
+  const img=document.createElement('img');
+  img.alt='AprilTag '+id;
+  img.src='https://cdn.jsdelivr.net/gh/AprilRobotics/apriltag-imgs@master/tagStandard41h12/tag41_12_'+String(id).padStart(5,'0')+'.png';
+  const label=document.createElement('div'); label.className='id'; label.textContent='#'+String(id).padStart(4,'0');
+  card.append(img,label); grid.appendChild(card);
+});
+</script>
+</body>
+</html>
